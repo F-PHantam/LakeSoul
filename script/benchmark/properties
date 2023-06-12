@@ -12,3 +12,11 @@ timezone=UTC
 row_num=500
 # delete_num随机删除多少条数据
 delete_num=50
+
+flink_source_to_sink_db=flink-sink
+flink_source_to_sink_table=default_init
+
+flink_datagen_sink_db=flink
+flink_datagen_sink_table=sink_table
+flink_datagen_sink_warehouse=s3://lakesoul-test-bucket/flink/
+flink_datagen_sink_chk=s3://lakesoul-test-bucket/flink/chk

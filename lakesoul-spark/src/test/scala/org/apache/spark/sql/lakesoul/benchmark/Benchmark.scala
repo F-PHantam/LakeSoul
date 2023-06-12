@@ -49,7 +49,7 @@ object Benchmark {
   /**
    * param example:
    * --mysql.hostname localhost
-   * --mysql.database.name default_init
+   * --mysql.database.name test_cdc
    * --mysql.username root
    * --mysql.password root
    * --mysql.port 3306

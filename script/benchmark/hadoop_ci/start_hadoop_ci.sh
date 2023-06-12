@@ -1,57 +1,5 @@
 #!/bin/bash
 
-# Note: Please ensure that these ports on the machine are not occupied: 5432, 3306, 8081, 9000, 9001
-# Note: Please install python3 before running auto_test.sh
-# Note: It is recommended that you install Docker-Desktop(or docker and docker-compose) in advance before running auto_test.sh
-# Note: Due to different machines' performance, you may need to adjust the sleep time in the function "sleep_after_ddl_or_dml"
-# Note: Please use command "bash auto_test.sh" to run auto_test.sh in script/benchmark directory
-
-# Check if docker is installed. If not, then install it automatically
-function docker_install {
-  echo "====== Check if docker is installed ======"
-  docker -v
-  if [ $? -eq 0 ]; then
-    echo "====== Docker is installed! ======"
-  else
-    echo "====== Installing Docker ======"
-    curl -sSL https://get.daocloud.io/docker | sh
-    echo "====== Docker is installed! ======!"
-  fi
-}
-
-# Check if docker-compose is installed. If not, then install it automatically
-function docker_compose_install {
-  echo "====== Check if docker-compose is installed ======"
-  docker compose version
-  if [ $? -eq 0 ]; then
-    echo "====== docker-compose is installed! ======"
-  else
-    echo "====== Installing docker-compose ======"
-    DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
-    mkdir -p $DOCKER_CONFIG/cli-plugins
-    curl -SL https://github.com/docker/compose/releases/download/v2.12.2/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
-    chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
-    echo "====== Docker is installed! ======"
-  fi
-}
-
-# Check if the modules we need are installed. If not, then install them
-function python_module_install {
-  # Check if pymysql is installed
-  if python3 -c "import pymysql"; then
-    echo "====== pymysql is installed ======"
-  else
-    echo "====== Installing pymysql ======"
-    pip3 install pymysql
-    echo "====== pymysql is installed ======"
-  fi
-}
-
-# Change current path from Lakesoul/script/benchmark to LakeSoul/docker/lakesoul-docker-compose-env
-function change_dir_from_script_benchmark_to_docker_compose {
-  cd ../../docker/lakesoul-docker-compose-env
-}
-
 # Change current path from LakeSoul/docker/lakesoul-docker-compose-env to Lakesoul/script/benchmark
 function change_path_from_docker_compose_to_script_benchmark {
   cd ../../script/benchmark
@@ -59,33 +7,33 @@ function change_path_from_docker_compose_to_script_benchmark {
 
 # Start Flink CDC Job
 function start_flink_cdc_job {
-  docker exec -ti lakesoul-docker-compose-env-jobmanager-1 flink run -d -c org.apache.flink.lakesoul.entry.MysqlCdc /opt/flink/work-dir/$FLINK_JAR_NAME --source_db.host mysql --source_db.port 3306 --source_db.db_name test_cdc --source_db.user root --source_db.password root --source.parallelism 4 --sink.parallelism 4 --warehouse_path s3://lakesoul-test-bucket/data/ --flink.checkpoint s3://lakesoul-test-bucket/chk --flink.savepoint s3://lakesoul-test-bucket/svp --job.checkpoint_interval 10000 --server_time_zone UTC # Start Flink CDC Job
+  docker exec -it $flink_container_name bash -c "flink run-application -t yarn-application -d -Dyarn.application.name=flink_mysql_cdc -c org.apache.flink.lakesoul.entry.MysqlCdc $flink_mysql_cdc_jar_path --source_db.host $mysql_host --source_db.port $mysql_port --source_db.db_name $mysql_db --source_db.user $mysql_user --source_db.password $mysql_password --warehouse_path $flink_mysql_cdc_warehouse --flink.checkpoint $flink_mysql_cdc_chk  --source.parallelism $flink_mysql_cdc_source_parallelism --sink.parallelism $flink_mysql_cdc_sink_parallelism --job.checkpoint_interval $flink_mysql_cdc_checkpoint_interval --server_time_zone $mysql_timezone"
 }
 
 # Start Flink Source to Sink Job
 function start_flink_source_to_sink_job {
-  docker exec -t lakesoul-docker-compose-env-jobmanager-1 flink run -d -c org.apache.flink.lakesoul.test.benchmark.LakeSoulSourceToSinkTable -C file:///opt/flink/work-dir/$FLINK_JAR_NAME /opt/flink/work-dir/$FLINK_TEST_JAR_NAME --source.database.name test_cdc --source.table.name default_init --sink.database.name flink_sink --sink.table.name default_init --use.cdc true --hash.bucket.number 2 --job.checkpoint_interval 10000 --server_time_zone UTC --warehouse.path s3://lakesoul-test-bucket/flink-sink/data --flink.checkpoint s3://lakesoul-test-bucket/flink-sink/chk # Start Flink Source to Sink Job
+  docker exec -t $flink_cluster_name flink run -d -c org.apache.flink.lakesoul.test.benchmark.LakeSoulSourceToSinkTable -C file:///opt/flink/work-dir/$FLINK_JAR_NAME /opt/flink/work-dir/$FLINK_TEST_JAR_NAME --source.database.name $mysql_db --source.table.name default_init --sink.database.name $flink_source_to_sink_db --sink.table.name $flink_source_to_sink_table --use.cdc true --hash.bucket.number $flink_source_to_sink_hash_bucket_number --job.checkpoint_interval $flink_source_to_sink_checkpoint_interval --server_time_zone $mysql_timezone --warehouse.path $flink_source_to_sink_warehouse --flink.checkpoint $flink_source_to_sink_chk # Start Flink Source to Sink Job
 }
 
 # Start Flink Write table without primary key Job
 function start_flink_write_table_without_primary_key_job {
-  docker exec -t lakesoul-docker-compose-env-jobmanager-1 flink run -d -c org.apache.flink.lakesoul.test.benchmark.LakeSoulDataGenSourceTable -C file:///opt/flink/work-dir/$FLINK_JAR_NAME /opt/flink/work-dir/$FLINK_TEST_JAR_NAME --sink.database.name flink --sink.table.name sink_table --job.checkpoint_interval 10000 --server_time_zone UTC --warehouse.path s3://lakesoul-test-bucket/flink/ --flink.checkpoint s3://lakesoul-test-bucket/flink/chk --sink.parallel 2 --data.size 1000 --write.time 5 # Start Flink Write table without primary keys Job
+  docker exec -t $flink_cluster_name flink run -d -c org.apache.flink.lakesoul.test.benchmark.LakeSoulDataGenSourceTable -C file:///opt/flink/work-dir/$FLINK_JAR_NAME /opt/flink/work-dir/$FLINK_TEST_JAR_NAME --sink.database.name $flink_datagen_sink_db --sink.table.name $flink_datagen_sink_table --job.checkpoint_interval $flink_datagen_sink_checkpoint_interval --server_time_zone $mysql_timezone --warehouse.path $flink_datagen_sink_warehouse --flink.checkpoint $flink_datagen_sink_chk --sink.parallel $flink_datagen_sink_parallelism --data.size $flink_datagen_sink_batch_data_row_num --write.time $flink_datagen_sink_batch_time # Start Flink Write table without primary keys Job
 }
 
 # Insert data into tables in mysql:test_cdc database
 function insert_data_into_tables {
   echo "====== Inserting data into tables ======"
-  docker exec -ti lakesoul-docker-compose-env-mysql-1 sh /2_insert_table_data.sh
+  docker exec -ti $mysql_container_name sh /2_insert_table_data.sh
   echo "====== Data has been inserted successfully! ======"
 }
 
 # Insert data into tables by pass db info
 function insert_data_into_tables_pass_db_info {
   echo "====== Inserting data into tables ======"
-  ./mysql_random_data_insert --no-progress -u "$user" -p"$password" --max-threads=10 "$db" default_init "$row_num";
+  ./mysql_random_data_insert --no-progress -h $mysql_host-u $mysql_user -p$mysql_password --max-threads=10 $mysql_db default_init $mysql_batch_insert_row_num;
   echo "====== Data has been inserted successfully! ======"
   echo "====== Inserting data into tables ======"
-  for ((i = 0; i < $table_num; i++)); do ./mysql_random_data_insert --no-progress -h $host -u $user -p$password --max-threads=10 $db random_table_$i $row_num; done
+  for ((i = 0; i < $mysql_table_num; i++)); do ./mysql_random_data_insert --no-progress -h $mysql_host -u $mysql_user -p$mysql_password --max-threads=10 $mysql_db random_table_$i $mysql_batch_insert_row_num; done
   echo "====== Data has been inserted successfully! ======"
 }
 
@@ -99,7 +47,7 @@ function sleep_after_ddl_or_dml {
 # Verify data consistency between mysql and LakeSoul
 function verify_mysql_cdc_data_consistency {
   echo "====== Verifying data consistency ======"
-  docker run --cpus 4 -m 16000m --net lakesoul-docker-compose-env_default --rm -t -v ${PWD}/work-dir:/opt/spark/work-dir --env lakesoul_home=/opt/spark/work-dir/lakesoul.properties bitnami/spark:3.3.1 spark-submit --driver-memory 14G --executor-memory 14G --conf spark.driver.memoryOverhead=1500m --conf spark.executor.memoryOverhead=1500m --jars /opt/spark/work-dir/$SPARK_JAR_NAME,/opt/spark/work-dir/mysql-connector-java-8.0.30.jar --conf spark.hadoop.fs.s3.buffer.dir=/tmp --conf spark.hadoop.fs.s3a.buffer.dir=/tmp --conf spark.hadoop.fs.s3a.fast.upload.buffer=disk --conf spark.hadoop.fs.s3a.fast.upload=true --class org.apache.spark.sql.lakesoul.benchmark.Benchmark --master local[4] /opt/spark/work-dir/$SPARK_TEST_JAR_NAME
+  docker run --cpus 4 -m 16000m --net lakesoul-docker-compose-env_default --rm -t -v ${PWD}/work-dir:/opt/spark/work-dir --env lakesoul_home=/opt/spark/work-dir/lakesoul.properties bitnami/spark:3.3.1 spark-submit --driver-memory $spark_task_driver_memory --executor-memory $spark_task_executor_memory --conf spark.driver.memoryOverhead=$spark_task_driver_memoryOverhead --conf spark.executor.memoryOverhead=$spark_task_executor_memoryOverhead --jars /opt/spark/work-dir/$SPARK_JAR_NAME,/opt/spark/work-dir/mysql-connector-java-8.0.30.jar --class org.apache.spark.sql.lakesoul.benchmark.Benchmark --master local[4] /opt/spark/work-dir/$SPARK_TEST_JAR_NAME
   echo "====== Verifying has been completed! ======"
 }
 
@@ -138,31 +86,47 @@ function clean_up_minio_data {
   echo "====== Cleaning up data in minio has been completed! ======"
 }
 
-# Note: If cluster is on k8s, mysql, pg and s3 services will not be started through the docker in the following ways.
-# By default, the Flink cdc task has been started by yourself, this script only checks the data accuracy,
-IS_ON_K8S=false
-if [ $# -ge 1 ]; then
-  if [ $1 = "k8s" ]; then
-    IS_ON_K8S=true
-  fi
-fi
+mysql_container_name=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep mysql_container_name= | awk -F'=' '{print $2}')
 
-table_num=$(cat ./properties | grep -v '^#' | grep table_num= | awk -F'=' '{print $2}')
-row_num=$(cat ./properties | grep -v '^#' | grep row_num= | awk -F'=' '{print $2}')
-host=$(cat ./properties | grep -v '^#' | grep host= | awk -F'=' '{print $2}')
-port=$(cat ./properties | grep -v '^#' | grep port= | awk -F'=' '{print $2}')
-db=$(cat ./properties | grep -v '^#' | grep db= | awk -F'=' '{print $2}')
-user=$(cat ./properties | grep -v '^#' | grep user= | awk -F'=' '{print $2}')
-password=$(cat ./properties | grep -v '^#' | grep password= | awk -F'=' '{print $2}')
-timezone=$(cat ./properties | grep -v '^#' | grep timezone= | awk -F'=' '{print $2}')
+mysql_table_num=$(cat ./properties | grep -v '^#' | grep table_num= | awk -F'=' '{print $2}')
+mysql_host=$(cat ./properties | grep -v '^#' | grep host= | awk -F'=' '{print $2}')
+mysql_port=$(cat ./properties | grep -v '^#' | grep port= | awk -F'=' '{print $2}')
+mysql_db=$(cat ./properties | grep -v '^#' | grep db= | awk -F'=' '{print $2}')
+mysql_user=$(cat ./properties | grep -v '^#' | grep user= | awk -F'=' '{print $2}')
+mysql_password=$(cat ./properties | grep -v '^#' | grep password= | awk -F'=' '{print $2}')
+mysql_timezone=$(cat ./properties | grep -v '^#' | grep timezone= | awk -F'=' '{print $2}')
+mysql_batch_insert_row_num=$(cat ./properties | grep -v '^#' | grep row_num= | awk -F'=' '{print $2}')
+mysql_batch_delete_num=$(cat ./properties | grep -v '^#' | grep delete_num= | awk -F'=' '{print $2}')
+
+flink_container_name=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep flink_container_name= | awk -F'=' '{print $2}')
+flink_mysql_cdc_jobmanager_memory=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep flink_mysql_cdc_jobmanager_memory= | awk -F'=' '{print $2}')
+flink_mysql_cdc_taskmanager_memory=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep flink_mysql_cdc_taskmanager_memory= | awk -F'=' '{print $2}')
+flink_mysql_cdc_task_slot=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep flink_mysql_cdc_task_slot= | awk -F'=' '{print $2}')
+flink_mysql_cdc_application_name=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep flink_mysql_cdc_application_name= | awk -F'=' '{print $2}')
+flink_mysql_cdc_jar_path=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep flink_mysql_cdc_jar_path= | awk -F'=' '{print $2}')
+
+flink_mysql_cdc_source_parallelism=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep flink_mysql_cdc_source_parallelism= | awk -F'=' '{print $2}')
+flink_mysql_cdc_sink_parallelism=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep flink_mysql_cdc_sink_parallelism= | awk -F'=' '{print $2}')
+flink_mysql_cdc_warehouse=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep flink_mysql_cdc_warehouse= | awk -F'=' '{print $2}')
+flink_mysql_cdc_chk=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep flink_mysql_cdc_chk= | awk -F'=' '{print $2}')
+flink_mysql_cdc_checkpoint_interval=$(cat ./hadoop/hadoop_ci.conf | grep -v '^#' | grep flink_mysql_cdc_checkpoint_interval= | awk -F'=' '{print $2}')
 
 flink_source_to_sink_db=$(cat ./properties | grep -v '^#' | grep flink_source_to_sink_db= | awk -F'=' '{print $2}')
 flink_source_to_sink_table=$(cat ./properties | grep -v '^#' | grep flink_source_to_sink_table= | awk -F'=' '{print $2}')
+flink_source_to_sink_hash_bucket_number=$(cat ./properties | grep -v '^#' | grep flink_source_to_sink_hash_bucket_number= | awk -F'=' '{print $2}')
+flink_source_to_sink_warehouse=$(cat ./properties | grep -v '^#' | grep flink_source_to_sink_warehouse= | awk -F'=' '{print $2}')
+flink_source_to_sink_chk=$(cat ./properties | grep -v '^#' | grep flink_source_to_sink_chk= | awk -F'=' '{print $2}')
+flink_source_to_sink_checkpoint_interval=$(cat ./properties | grep -v '^#' | grep flink_source_to_sink_checkpoint_interval= | awk -F'=' '{print $2}')
 
 flink_datagen_sink_db=$(cat ./properties | grep -v '^#' | grep flink_datagen_sink_db= | awk -F'=' '{print $2}')
 flink_datagen_sink_table=$(cat ./properties | grep -v '^#' | grep flink_datagen_sink_table= | awk -F'=' '{print $2}')
+flink_datagen_sink_parallelism=$(cat ./properties | grep -v '^#' | grep flink_datagen_sink_parallelism= | awk -F'=' '{print $2}')
 flink_datagen_sink_warehouse=$(cat ./properties | grep -v '^#' | grep flink_datagen_sink_warehouse= | awk -F'=' '{print $2}')
 flink_datagen_sink_chk=$(cat ./properties | grep -v '^#' | grep flink_datagen_sink_chk= | awk -F'=' '{print $2}')
+flink_datagen_sink_checkpoint_interval=$(cat ./properties | grep -v '^#' | grep flink_datagen_sink_checkpoint_interval= | awk -F'=' '{print $2}')
+flink_datagen_sink_batch_data_row_num=$(cat ./properties | grep -v '^#' | grep flink_datagen_sink_batch_data_row_num= | awk -F'=' '{print $2}')
+flink_datagen_sink_batch_time=$(cat ./properties | grep -v '^#' | grep flink_datagen_sink_batch_time= | awk -F'=' '{print $2}')
+
 
 
 FLINK_JAR_NAME=$(python3 ../get_jar_name.py ../../lakesoul-flink)
@@ -170,39 +134,19 @@ FLINK_TEST_JAR_NAME=$(python3 ../get_jar_name.py ../../lakesoul-flink | sed -e '
 SPARK_JAR_NAME=$(python3 ../get_jar_name.py ../../lakesoul-spark)
 SPARK_TEST_JAR_NAME=$(python3 ../get_jar_name.py ../../lakesoul-spark | sed -e 's/.jar/-tests.jar/g')
 
-#docker_install
-#docker_compose_install
-#python_module_install
+
 cd ./work-dir
-if [ ! -e $SPARK_TEST_JAR_NAME ]; then
-  wget https://dmetasoul-bucket.obs.cn-southwest-2.myhuaweicloud.com/releases/lakesoul/$SPARK_TEST_JAR_NAME
-fi
-if [ ! -e $SPARK_JAR_NAME ]; then
-  wget https://dmetasoul-bucket.obs.cn-southwest-2.myhuaweicloud.com/releases/lakesoul/$SPARK_JAR_NAME
-fi
+
+
 if [ ! -e mysql-connector-java-8.0.30.jar ]; then
   wget https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.30/mysql-connector-java-8.0.30.jar
 fi
-#pull spark docker image
-docker pull bitnami/spark:3.3.1
 
 cd ..
 
-if [ !$IS_ON_K8S ]; then
-  change_dir_from_script_benchmark_to_docker_compose
-  echo "====== Start docker compose services ======"
-  docker compose up -d # Use docker-compose to start services
-  sleep 30s
-  echo "====== Docker compose services have been started! ======"
-  echo "====== Starting flink cdc job ======"
-  start_flink_cdc_job
-  sleep 30s
-#  start_flink_source_to_sink_job
-#  sleep 30s
-#  start_flink_write_table_without_primary_key_job
-  echo "====== Flink cdc job has been started ======"
-  change_path_from_docker_compose_to_script_benchmark
-fi
+echo "====== Starting flink cdc job ======"
+start_flink_cdc_job
+sleep 30s
 
 echo "====== Creating tables in mysql:test_cdc database ======"
 python3 1_create_table.py # Create tables in mysql:test_cdc database
@@ -252,21 +196,6 @@ else
 fi
 
 sleep 5s
-# TODO: change column type is not supported now, it will be supported in the future
-#echo "====== Changing columns and deleting some data in tables ======"
-#python3 5_change_column.py # Change columns in mysql:test_cdc tables
-#python3 delete_data.py
-#echo "====== hanging columns and deleting some data have been completed! ======"
-#if [ !$IS_ON_K8S ]; then
-#  insert_data_into_tables
-#  sleep_after_ddl_or_dml
-#  verify_mysql_cdc_data_consistency
-#else
-#  insert_data_into_tables_pass_db_info
-#  sleep_after_ddl_or_dml
-#  verify_mysql_cdc_data_consistency_pass_db_info
-#fi
-#sleep 5s
 echo "====== Dropping columns and deleting some data in tables ======"
 python3 6_drop_column.py # Drop columns in mysql:test_cdc tables
 python3 delete_data.py
