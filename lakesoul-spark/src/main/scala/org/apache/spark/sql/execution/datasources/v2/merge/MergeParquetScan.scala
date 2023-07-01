@@ -16,7 +16,9 @@
 
 package org.apache.spark.sql.execution.datasources.v2.merge
 
+import com.dmetasoul.lakesoul.meta.DBConfig.{LAKESOUL_FILE_EXISTS_COLUMN_SPLITTER, LAKESOUL_RANGE_PARTITION_SPLITTER}
 import com.dmetasoul.lakesoul.meta.MetaVersion
+
 import java.util.{Locale, OptionalLong, TimeZone}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -125,14 +127,7 @@ abstract class MergeDeltaParquetScan(sparkSession: SparkSession,
 
 
   override def createReaderFactory(): PartitionReaderFactory = {
-    val readDataSchemaAsJson = readDataSchema.json
-
-    val requestedFields = readDataSchema.fieldNames
-
     hadoopConf.set(ParquetInputFormat.READ_SUPPORT_CLASS, classOf[ParquetReadSupport].getName)
-    hadoopConf.set(
-      ParquetWriteSupport.SPARK_ROW_SCHEMA,
-      readDataSchemaAsJson)
     hadoopConf.set(
       SQLConf.SESSION_LOCAL_TIMEZONE.key,
       sparkSession.sessionState.conf.sessionLocalTimeZone)
@@ -152,6 +147,7 @@ abstract class MergeDeltaParquetScan(sparkSession: SparkSession,
     hadoopConf.setBoolean(
       SQLConf.PARQUET_INT96_AS_TIMESTAMP.key,
       sparkSession.sessionState.conf.isParquetINT96AsTimestamp)
+    hadoopConf.set("spark.sql.legacy.parquet.nanosAsLong", "false")
 
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
@@ -239,7 +235,7 @@ abstract class MergeDeltaParquetScan(sparkSession: SparkSession,
         val requestFilesSchema = newFileIndex.getFileInfoForPartitionVersion()
           .groupBy(_.range_version)
           .map(m => {
-            val fileExistCols = m._2.head.file_exist_cols.split(",")
+            val fileExistCols = m._2.head.file_exist_cols.split(LAKESOUL_FILE_EXISTS_COLUMN_SPLITTER)
             m._1 + "->" + StructType(
               requestedFields.filter(f => fileExistCols.contains(f) || tableInfo.hash_partition_columns.contains(f))
                 .map(c => tableInfo.schema(c))
@@ -250,7 +246,7 @@ abstract class MergeDeltaParquetScan(sparkSession: SparkSession,
         newFileIndex.getFileInfoForPartitionVersion()
           .groupBy(_.range_version)
           .map(m => {
-            val fileExistCols = m._2.head.file_exist_cols.split(",")
+            val fileExistCols = m._2.head.file_exist_cols.split(LAKESOUL_FILE_EXISTS_COLUMN_SPLITTER)
             (m._1, StructType(
               requestedFields.filter(f => fileExistCols.contains(f) || tableInfo.hash_partition_columns.contains(f))
                 .map(c => tableInfo.schema(c))
@@ -262,7 +258,7 @@ abstract class MergeDeltaParquetScan(sparkSession: SparkSession,
           fileInfo
             .groupBy(_.range_version)
             .map(m => {
-              val fileExistCols = m._2.head.file_exist_cols.split(",")
+              val fileExistCols = m._2.head.file_exist_cols.split(LAKESOUL_FILE_EXISTS_COLUMN_SPLITTER)
               m._1 + "->" + StructType(
                 requestedFields.filter(f => fileExistCols.contains(f) || tableInfo.hash_partition_columns.contains(f))
                   .map(c => tableInfo.schema(c))
@@ -273,7 +269,7 @@ abstract class MergeDeltaParquetScan(sparkSession: SparkSession,
         fileInfo
           .groupBy(_.range_version)
           .map(m => {
-            val fileExistCols = m._2.head.file_exist_cols.split(",")
+            val fileExistCols = m._2.head.file_exist_cols.split(LAKESOUL_FILE_EXISTS_COLUMN_SPLITTER)
             (m._1, StructType(
               requestedFields.filter(f => fileExistCols.contains(f) || tableInfo.hash_partition_columns.contains(f))
                 .map(c => tableInfo.schema(c))
@@ -316,9 +312,9 @@ abstract class MergeDeltaParquetScan(sparkSession: SparkSession,
 
 
   /**
-   * If a file with `path` is unsplittable, return the unsplittable reason,
-   * otherwise return `None`.
-   */
+    * If a file with `path` is unsplittable, return the unsplittable reason,
+    * otherwise return `None`.
+    */
   def getFileUnSplittableReason(path: Path): String = {
     assert(!isSplittable(path))
     "Merge parquet data Need Complete file"
