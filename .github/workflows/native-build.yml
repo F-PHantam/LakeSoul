@@ -180,6 +180,7 @@ jobs:
         with:
           name: maven-package-upload
           path: |
+            lakesoul-common/target/lakesoul-common-*.jar
             lakesoul-spark/target/lakesoul-spark-*.jar
             lakesoul-flink/target/lakesoul-flink-*.jar
             lakesoul-presto/target/lakesoul-presto-*.jar
