@@ -126,6 +126,17 @@ public final class ArrowUtils {
         return new RowType(fields);
     }
 
+    public static RowType tablePrimaryArrowSchema(Schema schema, List<String> primaryKeys) {
+        List<RowType.RowField> fields =
+                schema.getFields().stream()
+                        .filter(name -> primaryKeys.contains(name))
+                        .map(f ->
+                                new RowType.RowField(f.getName(), ArrowUtils.fromArrowField(f))
+                        )
+                        .collect(Collectors.toCollection(ArrayList::new));
+        return new RowType(fields);
+    }
+
     private static LogicalType fromArrowField(Field field) {
         if (field.getType() instanceof ArrowType.Struct) {
             return new RowType(field.getChildren().stream().map(f ->
