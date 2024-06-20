@@ -36,6 +36,7 @@ import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.ExecutionCheckpointingOptions;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.RowData.FieldGetter;
@@ -62,7 +63,7 @@ import static org.apache.flink.lakesoul.tool.JobOptions.*;
 import static org.apache.flink.lakesoul.tool.LakeSoulKafkaSinkOptions.*;
 import static org.apache.flink.lakesoul.tool.LakeSoulSinkOptions.SERVER_TIME_ZONE;
 
-public class LakeSoulKafkaAvroSink_1 {
+public class LakeSoulKafkaAvroSink {
     public static void main(String[] args) throws Exception {
         ParameterTool parameter = ParameterTool.fromArgs(args);
         String kafkaServers = parameter.get(BOOTSTRAP_SERVERS.key());
@@ -96,7 +97,6 @@ public class LakeSoulKafkaAvroSink_1 {
         pro.put("retries", 3);
         pro.put("transaction.timeout.ms", "60000");
 
-        OffsetsInitializer offSet;
         if (securityProtocol != null) {
             pro.put("security.protocol", securityProtocol);
             if (securityProtocol.equals("SASL_PLAINTEXT")) {
@@ -130,6 +130,7 @@ public class LakeSoulKafkaAvroSink_1 {
 
         Configuration conf = new Configuration();
         // parameters for mutil tables dml sink
+        conf.set(INFERRING_SCHEMA, true);
         conf.set(LakeSoulSinkOptions.USE_CDC, true);
         conf.set(LakeSoulSinkOptions.SOURCE_PARALLELISM, sourceParallelism);
         conf.set(LakeSoulSinkOptions.BUCKET_PARALLELISM, sinkParallelism);
@@ -168,6 +169,9 @@ public class LakeSoulKafkaAvroSink_1 {
                 WatermarkStrategy.noWatermarks(),
                 "LakeSoul Arrow Source"
         );
+
+
+        source.setParallelism(sourceParallelism);
 
         Map<String, Object> props = new HashMap<String, Object>((Map) pro);
 
@@ -229,11 +233,13 @@ public class LakeSoulKafkaAvroSink_1 {
                                 ConfluentRegistryAvroSerializationSchema<GenericRecord> genericRecordConfluentRegistryAvroSerializationSchema =
                                         ConfluentRegistryAvroSerializationSchema.forGeneric(
                                                 String.format("%s-value", kafkaTopic),
-                                                AvroSchemaConverter.convertToSchema(kafkaAvroType),
+                                                AvroSchemaConverter.convertToSchema(kafkaAvroType, false),
                                                 schemaRegistryUrl,
                                                 props);
-                                RowDataToAvroConverter valueConverter = RowDataToAvroConverters.createConverter(kafkaAvroType);
-                                GenericRecord valueGenericRecord = (GenericRecord) valueConverter.convert(AvroSchemaConverter.convertToSchema(kafkaAvroType), kafkaRowData);
+                                org.apache.avro.Schema schema
+                                        = genericRecordConfluentRegistryAvroSerializationSchema.getSchema();
+                                RowDataToAvroConverter valueConverter = RowDataToAvroConverters.createConverter(kafkaAvroType, false);
+                                GenericRecord valueGenericRecord = (GenericRecord) valueConverter.convert(AvroSchemaConverter.convertToSchema(kafkaAvroType, false), kafkaRowData);
                                 System.out.println(valueGenericRecord.toString());
                                 byte[] valueBytes = genericRecordConfluentRegistryAvroSerializationSchema.serialize(valueGenericRecord);
 
@@ -252,10 +258,9 @@ public class LakeSoulKafkaAvroSink_1 {
                             }
                         });
                     }
-                });
+                }).setParallelism(sourceParallelism);
 
-        // sinkKafkaRecordSingleOutputStreamOperator.print();
-        sinkKafkaRecordSingleOutputStreamOperator.sinkTo(kafkaSink);
+        sinkKafkaRecordSingleOutputStreamOperator.sinkTo(kafkaSink).setParallelism(sinkParallelism);
         env.execute("LakeSoul CDC Sink From Kafka topic " + kafkaTopic);
     }
 
