@@ -136,9 +136,7 @@ public class LakeSoulKafkaAvroSink {
         conf.set(LakeSoulSinkOptions.BUCKET_PARALLELISM, sinkParallelism);
         conf.set(ExecutionCheckpointingOptions.ENABLE_CHECKPOINTS_AFTER_TASKS_FINISH, true);
 
-        // StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
-        conf.set(RestOptions.PORT, 8181);
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironmentWithWebUI(conf);
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
         ParameterTool pt = ParameterTool.fromMap(conf.toMap());
         env.getConfig().setGlobalJobParameters(pt);
         env.enableCheckpointing(checkpointInterval);
