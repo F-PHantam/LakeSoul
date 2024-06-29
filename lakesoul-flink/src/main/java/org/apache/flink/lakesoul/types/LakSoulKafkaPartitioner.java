@@ -30,7 +30,7 @@ public class LakSoulKafkaPartitioner<T> extends FlinkKafkaPartitioner<T> {
                 partitions != null && partitions.length > 0,
                 "Partitions of the target topic is empty.");
 
-        if (record == null) {
+        if (record != null) {
             if (record instanceof Long) {
                 return partitions[(int) ((Long) record % partitions.length)];
             }
